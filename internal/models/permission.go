@@ -1,10 +1,5 @@
 package models
 
-import (
-	"github.com/google/uuid"
-	"gorm.io/gorm"
-)
-
 // Permission representa un permiso específico del sistema
 type Permission struct {
 	ID          string   `json:"id" gorm:"type:uuid;primary_key;default:uuid_generate_v4()"`
@@ -12,14 +7,6 @@ type Permission struct {
 	Description string   `json:"description" gorm:"not null"`
 	TypeUserID  string   `json:"type_user_id" gorm:"type:uuid;not null"`
 	TypeUser    TypeUser `json:"type_user" gorm:"foreignKey:TypeUserID"`
-}
-
-// BeforeCreate hook de GORM para generar UUID antes de crear
-func (p *Permission) BeforeCreate(tx *gorm.DB) error {
-	if p.ID == "" {
-		p.ID = uuid.New().String()
-	}
-	return nil
 }
 
 // TableName especifica el nombre de la tabla

@@ -5,26 +5,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"holding-snapshots/internal/models"
+	"holding-snapshots/internal/scraping"
 	"holding-snapshots/pkg/cache"
 	"holding-snapshots/pkg/database"
-	"io"
 	"log"
-	"net/http"
 	"time"
 )
 
-type ScrapingService struct{}
+type ScrapingService struct {
+	factory *scraping.ScrapingFactory
+}
 
 // NewScrapingService crea una nueva instancia del servicio de scraping
 func NewScrapingService() *ScrapingService {
-	return &ScrapingService{}
-}
-
-// ScrapingResponse representa la respuesta esperada del endpoint de scraping
-type ScrapingResponse struct {
-	Symbol string  `json:"symbol"`
-	Price  float64 `json:"price"`
-	Valid  bool    `json:"valid"`
+	return &ScrapingService{
+		factory: scraping.NewScrapingFactory(),
+	}
 }
 
 // ExecuteWeeklyScraping ejecuta el scraping semanal de todos los holdings
@@ -52,7 +48,7 @@ func (s *ScrapingService) ExecuteWeeklyScraping() error {
 			log.Printf("❌ Error procesando holding %s (%s): %v", holding.Name, holding.Code, err)
 			continue
 		}
-		
+
 		// Pequeña pausa entre requests para ser respetuosos con el servidor
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -63,8 +59,8 @@ func (s *ScrapingService) ExecuteWeeklyScraping() error {
 
 // ProcessHolding procesa un holding individual
 func (s *ScrapingService) ProcessHolding(holding *models.Holding) error {
-	// Obtener el precio actual del activo
-	price, err := s.FetchAssetPrice(holding.Group.Type.ScrapingURL, holding.Code)
+	// Obtener el precio actual del activo usando la factory
+	price, err := s.FetchAssetPrice(&holding.Group.Type, holding.Code, holding.Group.Name)
 	if err != nil {
 		return fmt.Errorf("error obteniendo precio para %s: %w", holding.Code, err)
 	}
@@ -84,19 +80,29 @@ func (s *ScrapingService) ProcessHolding(holding *models.Holding) error {
 
 	// Actualizar holding con nuevos cálculos
 	holding.CalculateEarnings(price)
-	
+
 	err = database.DB.Save(holding).Error
 	if err != nil {
 		return fmt.Errorf("error actualizando holding: %w", err)
 	}
 
-	log.Printf("📈 Holding actualizado: %s (%s) - Precio: %.2f %s", 
+	log.Printf("📈 Holding actualizado: %s (%s) - Precio: %.2f %s",
 		holding.Name, holding.Code, price, holding.Group.Type.Currency)
 
 	return nil
 }
 
-// ValidateHolding valida si un holding existe en la URL de scraping
+// ValidatedHoldingCache representa la estructura de datos para el cache de holdings validados
+type ValidatedHoldingCache struct {
+	Name     string    `json:"name"`
+	Code     string    `json:"code"`
+	TypeID   string    `json:"type_id"`
+	TypeName string    `json:"type_name"`
+	Valid    bool      `json:"valid"`
+	CachedAt time.Time `json:"cached_at"`
+}
+
+// ValidateHolding valida si un holding existe en la URL de scraping con cache Redis
 func (s *ScrapingService) ValidateHolding(name, code, groupID string, quantity float64) (*models.Holding, bool, error) {
 	// Obtener el grupo y su tipo de inversión
 	var group models.Group
@@ -105,8 +111,61 @@ func (s *ScrapingService) ValidateHolding(name, code, groupID string, quantity f
 		return nil, false, fmt.Errorf("grupo no encontrado: %w", err)
 	}
 
-	// Verificar si el activo existe en la URL de scraping
-	_, err = s.FetchAssetPrice(group.Type.ScrapingURL, code)
+	// Crear clave de cache basada en tipo de inversión y código
+	cacheKey := fmt.Sprintf("validated_holding:%s:%s", group.Type.ID, code)
+	ctx := context.Background()
+
+	// Verificar cache primero
+	if cachedData, err := cache.Get(ctx, cacheKey); err == nil {
+		var cachedHolding ValidatedHoldingCache
+		if json.Unmarshal([]byte(cachedData), &cachedHolding) == nil {
+			log.Printf("📦 Holding %s (%s) encontrado en cache para tipo %s - Válido: %v",
+				name, code, cachedHolding.TypeName, cachedHolding.Valid)
+
+			if cachedHolding.Valid {
+				// Crear el holding usando los datos cacheados
+				holding := &models.Holding{
+					Name:     name,
+					Code:     code,
+					GroupID:  groupID,
+					Quantity: quantity,
+				}
+				return holding, true, nil
+			} else {
+				// Si el cache dice que no es válido, devolver false sin hacer scraping
+				return nil, false, nil
+			}
+		}
+	}
+
+	log.Printf("🔍 Holding %s (%s) no encontrado en cache, realizando validación por scraping...", name, code)
+
+	// No está en cache, verificar si el activo existe usando la estrategia apropiada
+	_, err = s.FetchAssetPrice(&group.Type, code, group.Name)
+
+	// Crear estructura para cache
+	cacheData := ValidatedHoldingCache{
+		Name:     name,
+		Code:     code,
+		TypeID:   group.Type.ID,
+		TypeName: group.Type.Name,
+		Valid:    err == nil,
+		CachedAt: time.Now(),
+	}
+
+	// Guardar resultado en cache (tanto si es válido como si no lo es)
+	// TTL de 24 horas para holdings válidos, 2 horas para inválidos
+	cacheTTL := 2 * time.Hour
+	if cacheData.Valid {
+		cacheTTL = 24 * time.Hour
+	}
+
+	if cacheJSON, jsonErr := json.Marshal(cacheData); jsonErr == nil {
+		cache.Set(ctx, cacheKey, string(cacheJSON), cacheTTL)
+		log.Printf("💾 Resultado de validación guardado en cache para %s (%s) - Válido: %v, TTL: %v",
+			name, code, cacheData.Valid, cacheTTL)
+	}
+
 	if err != nil {
 		log.Printf("⚠️ Holding %s (%s) no válido: %v", name, code, err)
 		return nil, false, nil // No es válido pero no es un error del sistema
@@ -123,54 +182,65 @@ func (s *ScrapingService) ValidateHolding(name, code, groupID string, quantity f
 	return holding, true, nil
 }
 
-// FetchAssetPrice obtiene el precio de un activo desde la URL de scraping
-func (s *ScrapingService) FetchAssetPrice(scrapingURL, code string) (float64, error) {
-	// Verificar cache primero (TTL de 5 minutos para evitar múltiples requests)
-	cacheKey := fmt.Sprintf("asset_price:%s", code)
+// ClearValidatedHoldingCache elimina el cache de un holding específico
+func (s *ScrapingService) ClearValidatedHoldingCache(typeID, code string) error {
+	cacheKey := fmt.Sprintf("validated_holding:%s:%s", typeID, code)
 	ctx := context.Background()
-	
-	if cachedPrice, err := cache.Get(ctx, cacheKey); err == nil {
-		var price float64
-		if json.Unmarshal([]byte(cachedPrice), &price) == nil {
-			return price, nil
-		}
-	}
 
-	// Construir URL completa
-	fullURL := fmt.Sprintf("%s?symbol=%s", scrapingURL, code)
-	
-	// Realizar request HTTP
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Get(fullURL)
+	err := cache.Delete(ctx, cacheKey)
 	if err != nil {
-		return 0, fmt.Errorf("error en request HTTP: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("status code no exitoso: %d", resp.StatusCode)
+		return fmt.Errorf("error eliminando cache para holding %s del tipo %s: %w", code, typeID, err)
 	}
 
-	// Leer respuesta
-	body, err := io.ReadAll(resp.Body)
+	log.Printf("🗑️ Cache eliminado para holding %s del tipo %s", code, typeID)
+	return nil
+}
+
+// GetValidatedHoldingFromCache obtiene información de un holding desde el cache
+func (s *ScrapingService) GetValidatedHoldingFromCache(typeID, code string) (*ValidatedHoldingCache, bool, error) {
+	cacheKey := fmt.Sprintf("validated_holding:%s:%s", typeID, code)
+	ctx := context.Background()
+
+	cachedData, err := cache.Get(ctx, cacheKey)
 	if err != nil {
-		return 0, fmt.Errorf("error leyendo respuesta: %w", err)
+		return nil, false, nil // No está en cache, no es un error
 	}
 
-	// Parsear respuesta JSON
-	var scrapingResp ScrapingResponse
-	err = json.Unmarshal(body, &scrapingResp)
+	var cachedHolding ValidatedHoldingCache
+	if err := json.Unmarshal([]byte(cachedData), &cachedHolding); err != nil {
+		return nil, false, fmt.Errorf("error deserializando cache: %w", err)
+	}
+
+	return &cachedHolding, true, nil
+}
+
+// GetValidationCacheStats obtiene estadísticas del cache de validaciones
+func (s *ScrapingService) GetValidationCacheStats() map[string]interface{} {
+	stats := map[string]interface{}{
+		"cache_pattern": "validated_holding:*",
+		"description":   "Cache de holdings validados por tipo de inversión",
+		"ttl_valid":     "24 horas para holdings válidos",
+		"ttl_invalid":   "2 horas para holdings inválidos",
+	}
+	return stats
+}
+
+// FetchAssetPrice obtiene el precio de un activo usando la estrategia apropiada
+func (s *ScrapingService) FetchAssetPrice(typeInvestment *models.TypeInvestment, code, groupName string) (float64, error) {
+	// Obtener la estrategia apropiada según el nombre del grupo
+	strategy, err := s.factory.GetStrategy(groupName)
 	if err != nil {
-		return 0, fmt.Errorf("error parseando JSON: %w", err)
+		return 0, fmt.Errorf("error obteniendo estrategia de scraping para grupo %s: %w", groupName, err)
 	}
 
-	if !scrapingResp.Valid {
-		return 0, fmt.Errorf("activo no válido según el servicio de scraping")
+	// Usar la estrategia para obtener el precio
+	price, err := strategy.FetchPrice(typeInvestment, code)
+	if err != nil {
+		return 0, fmt.Errorf("error obteniendo precio usando estrategia %s: %w", strategy.GetSupportedType(), err)
 	}
 
-	// Guardar en cache por 5 minutos
-	priceJSON, _ := json.Marshal(scrapingResp.Price)
-	cache.Set(ctx, cacheKey, string(priceJSON), 5*time.Minute)
+	log.Printf("💰 Precio obtenido usando estrategia %s para %s: %.2f %s",
+		strategy.GetSupportedType(), code, price, typeInvestment.Currency)
 
-	return scrapingResp.Price, nil
+	return price, nil
 }

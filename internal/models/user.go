@@ -2,9 +2,6 @@ package models
 
 import (
 	"time"
-
-	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
 // User representa un usuario del sistema
@@ -18,14 +15,6 @@ type User struct {
 	Groups    []Group   `json:"groups" gorm:"foreignKey:UserID"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
-}
-
-// BeforeCreate hook de GORM para generar UUID antes de crear
-func (u *User) BeforeCreate(tx *gorm.DB) error {
-	if u.ID == "" {
-		u.ID = uuid.New().String()
-	}
-	return nil
 }
 
 // TableName especifica el nombre de la tabla
