@@ -1,0 +1,43 @@
+# Ejemplo de docker-compose para conectar con servicios externos en diferentes hosts
+
+version: "3.8"
+
+services:
+  holding-snapshots:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      # Conexión a PostgreSQL en servidor remoto
+      - DATABASE_URL=postgresql://holding_user:secure_password@10.0.1.100:5432/holding_production
+
+      # Conexión a Redis en servidor remoto
+      - REDIS_URL=redis://10.0.1.100:6379
+
+      # API Key para producción
+      - SNAPSHOT_SERVICE_API_KEY=prod_super_secure_api_key_2024
+
+      # Configuración del servidor
+      - PORT=8080
+      - ENV=production
+
+      # Cron schedule para producción (domingos 1:00 AM)
+      - SCRAPING_CRON_SCHEDULE=0 1 * * 0
+
+    restart: unless-stopped
+
+    # Configuración de red para acceso externo
+    networks:
+      - holding_network
+
+    # Healthcheck para monitoreo
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  holding_network:
+    driver: bridge
