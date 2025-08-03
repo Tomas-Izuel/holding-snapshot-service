@@ -1,20 +1,33 @@
 package services
 
 import (
+	"holding-snapshots/internal/config"
 	"log"
+	"time"
 
-	"github.com/gofiber/contrib/fibercron"
 	"github.com/gofiber/fiber/v2"
+	"github.com/robfig/cron/v3"
 )
 
 type CronService struct {
 	scrapingService *ScrapingService
+	cronJob         *cron.Cron
 }
 
 // NewCronService crea una nueva instancia del servicio de cron
 func NewCronService() *CronService {
+	// Crear cron con timezone
+	location, err := time.LoadLocation("America/Argentina/Buenos_Aires")
+	if err != nil {
+		log.Printf("⚠️ Error cargando timezone, usando UTC: %v", err)
+		location = time.UTC
+	}
+
+	cronJob := cron.New(cron.WithLocation(location))
+
 	return &CronService{
 		scrapingService: NewScrapingService(),
+		cronJob:         cronJob,
 	}
 }
 
@@ -22,36 +35,29 @@ func NewCronService() *CronService {
 func (cs *CronService) SetupCronJobs(app *fiber.App, cronSchedule string) {
 	log.Printf("📅 Configurando cron job con schedule: %s", cronSchedule)
 
-	// Configurar fibercron
-	app.Use(fibercron.New(fibercron.Config{
-		TimeZone: "America/Argentina/Buenos_Aires", // Ajustar según la zona horaria deseada
-	}))
-
-	// Cron job para scraping semanal
-	// Por defecto: "0 1 * * 0" = Domingos a la 1:00 AM
-	app.Get("/cron/scraping", fibercron.New(fibercron.Config{
-		TimeZone: "America/Argentina/Buenos_Aires",
-	}), func(c *fiber.Ctx) error {
-		// Ejecutar en una goroutine para no bloquear el request
-		go func() {
-			log.Println("🔄 Iniciando cron job de scraping...")
-			if err := cs.scrapingService.ExecuteWeeklyScraping(); err != nil {
-				log.Printf("❌ Error en cron job de scraping: %v", err)
-			} else {
-				log.Println("✅ Cron job de scraping completado exitosamente")
-			}
-		}()
-
-		return c.JSON(fiber.Map{
-			"message": "Scraping job iniciado",
-		})
+	// Agregar trabajo de scraping semanal
+	_, err := cs.cronJob.AddFunc(cronSchedule, func() {
+		log.Println("🔄 Iniciando cron job de scraping...")
+		if err := cs.scrapingService.ExecuteWeeklyScraping(); err != nil {
+			log.Printf("❌ Error en cron job de scraping: %v", err)
+		} else {
+			log.Println("✅ Cron job de scraping completado exitosamente")
+		}
 	})
+
+	if err != nil {
+		log.Printf("❌ Error configurando cron job: %v", err)
+		return
+	}
+
+	// Iniciar el cron
+	cs.cronJob.Start()
 
 	// Endpoint manual para ejecutar scraping (útil para testing)
 	app.Post("/api/scraping/execute", func(c *fiber.Ctx) error {
 		// Verificar API Key
 		apiKey := c.Get("Authorization")
-		if apiKey == "" {
+		if apiKey == "" || apiKey != config.AppConfig.APIKey {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"error": "API Key requerida",
 			})
@@ -61,6 +67,8 @@ func (cs *CronService) SetupCronJobs(app *fiber.App, cronSchedule string) {
 			log.Println("🔧 Ejecutando scraping manual...")
 			if err := cs.scrapingService.ExecuteWeeklyScraping(); err != nil {
 				log.Printf("❌ Error en scraping manual: %v", err)
+			} else {
+				log.Println("✅ Scraping manual completado")
 			}
 		}()
 
@@ -70,4 +78,12 @@ func (cs *CronService) SetupCronJobs(app *fiber.App, cronSchedule string) {
 	})
 
 	log.Println("✅ Cron jobs configurados correctamente")
+}
+
+// Stop detiene el servicio de cron
+func (cs *CronService) Stop() {
+	if cs.cronJob != nil {
+		cs.cronJob.Stop()
+		log.Println("🛑 Cron jobs detenidos")
+	}
 }

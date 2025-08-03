@@ -63,6 +63,12 @@ func main() {
 	log.Printf("🌍 Entorno: %s", cfg.Environment)
 	log.Printf("📅 Cron schedule: %s", cfg.ScrapingCronSchedule)
 
+	// Configurar graceful shutdown
+	defer func() {
+		log.Println("🛑 Cerrando servicios...")
+		cronService.Stop()
+	}()
+
 	// Iniciar servidor
 	if err := app.Listen(":" + cfg.Port); err != nil {
 		log.Fatalf("❌ Error iniciando servidor: %v", err)

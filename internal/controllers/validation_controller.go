@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"holding-snapshots/internal/services"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -40,7 +41,7 @@ type ValidateHoldingResponse struct {
 // POST /api/validate
 func (vc *ValidationController) ValidateHolding(c *fiber.Ctx) error {
 	var req ValidateHoldingRequest
-	
+
 	// Parsear el body de la request
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -63,12 +64,12 @@ func (vc *ValidationController) ValidateHolding(c *fiber.Ctx) error {
 
 	// Validar el holding usando el servicio de scraping
 	holding, isValid, err := vc.scrapingService.ValidateHolding(
-		req.Name, 
-		req.Code, 
-		req.GroupID, 
+		req.Name,
+		req.Code,
+		req.GroupID,
 		req.Quantity,
 	)
-	
+
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Error interno del servidor al validar el holding",
@@ -79,7 +80,7 @@ func (vc *ValidationController) ValidateHolding(c *fiber.Ctx) error {
 	response := ValidateHoldingResponse{
 		IsValid: isValid,
 	}
-	
+
 	if holding != nil {
 		response.Holding.Name = holding.Name
 		response.Holding.Code = holding.Code
@@ -96,6 +97,6 @@ func (vc *ValidationController) HealthCheck(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"status":    "ok",
 		"service":   "holding-snapshots",
-		"timestamp": fiber.Now(),
+		"timestamp": time.Now().Format(time.RFC3339),
 	})
 }
