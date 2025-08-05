@@ -7,9 +7,9 @@ import (
 
 // Holding representa un activo de inversión específico
 type Holding struct {
-	ID               string     `json:"id" gorm:"type:uuid;primary_key;default:uuid_generate_v4()"`
-	Name             string     `json:"name" gorm:"not null"`              // Ej: "Apple", "BTC"
-	Code             string     `json:"code" gorm:"not null"`              // Ej: "AAPL", "BTC"
+	ID               string     `json:"id" gorm:"type:uuid;primary_key"`
+	Name             string     `json:"name" gorm:"not null"` // Ej: "Apple", "BTC"
+	Code             string     `json:"code" gorm:"not null"` // Ej: "AAPL", "BTC"
 	GroupID          string     `json:"group_id" gorm:"type:uuid;not null"`
 	Group            Group      `json:"group" gorm:"foreignKey:GroupID"`
 	Quantity         float64    `json:"quantity" gorm:"not null"`
@@ -29,7 +29,7 @@ func (h *Holding) BeforeCreate(tx *gorm.DB) error {
 
 // TableName especifica el nombre de la tabla
 func (Holding) TableName() string {
-	return "holdings"
+	return "Holding"
 }
 
 // CalculateEarnings calcula las ganancias basado en precio actual vs snapshots anteriores
@@ -37,7 +37,7 @@ func (h *Holding) CalculateEarnings(currentPrice float64) {
 	if h.LastPrice != nil && *h.LastPrice > 0 {
 		earnings := (currentPrice - *h.LastPrice) * h.Quantity
 		h.Earnings = &earnings
-		
+
 		relativeEarnings := ((currentPrice - *h.LastPrice) / *h.LastPrice) * 100
 		h.RelativeEarnings = &relativeEarnings
 	}

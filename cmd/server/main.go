@@ -28,11 +28,6 @@ func main() {
 		log.Printf("⚠️ Advertencia: Error habilitando extensión UUID: %v", err)
 	}
 
-	// Ejecutar migraciones
-	if err := database.AutoMigrate(); err != nil {
-		log.Fatalf("❌ Error ejecutando migraciones: %v", err)
-	}
-
 	// Conectar a Redis
 	if err := cache.Connect(cfg.RedisURL); err != nil {
 		log.Fatalf("❌ Error conectando a Redis: %v", err)

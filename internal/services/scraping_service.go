@@ -102,17 +102,11 @@ type ValidatedHoldingCache struct {
 	CachedAt time.Time `json:"cached_at"`
 }
 
-// ValidateHolding valida si un holding existe en la URL de scraping con cache Redis
-func (s *ScrapingService) ValidateHolding(name, code, groupID string, quantity float64) (*models.Holding, bool, error) {
-	// Obtener el grupo y su tipo de inversión
-	var group models.Group
-	err := database.DB.Preload("Type").First(&group, "id = ?", groupID).Error
-	if err != nil {
-		return nil, false, fmt.Errorf("grupo no encontrado: %w", err)
-	}
-
+// ValidateHoldingWithType valida si un holding existe usando directamente el tipo de inversión
+// Este método es útil para validar holdings antes de crear un grupo
+func (s *ScrapingService) ValidateHoldingWithType(name, code string, typeInvestment *models.TypeInvestment, groupName string, quantity float64) (*models.Holding, bool, error) {
 	// Crear clave de cache basada en tipo de inversión y código
-	cacheKey := fmt.Sprintf("validated_holding:%s:%s", group.Type.ID, code)
+	cacheKey := fmt.Sprintf("validated_holding:%s:%s", typeInvestment.ID, code)
 	ctx := context.Background()
 
 	// Verificar cache primero
@@ -127,7 +121,6 @@ func (s *ScrapingService) ValidateHolding(name, code, groupID string, quantity f
 				holding := &models.Holding{
 					Name:     name,
 					Code:     code,
-					GroupID:  groupID,
 					Quantity: quantity,
 				}
 				return holding, true, nil
@@ -140,15 +133,18 @@ func (s *ScrapingService) ValidateHolding(name, code, groupID string, quantity f
 
 	log.Printf("🔍 Holding %s (%s) no encontrado en cache, realizando validación por scraping...", name, code)
 
+	// Debug: Log antes de llamar fetchAssetPriceWithType
+	log.Printf("🚀 ANTES de fetchAssetPriceWithType - TypeInvestment.ScrapingURL: '%s'", typeInvestment.ScrapingURL)
+
 	// No está en cache, verificar si el activo existe usando la estrategia apropiada
-	_, err = s.FetchAssetPrice(&group.Type, code, group.Name)
+	_, err := s.fetchAssetPriceWithType(typeInvestment, code, groupName)
 
 	// Crear estructura para cache
 	cacheData := ValidatedHoldingCache{
 		Name:     name,
 		Code:     code,
-		TypeID:   group.Type.ID,
-		TypeName: group.Type.Name,
+		TypeID:   typeInvestment.ID,
+		TypeName: typeInvestment.Name,
 		Valid:    err == nil,
 		CachedAt: time.Now(),
 	}
@@ -175,11 +171,34 @@ func (s *ScrapingService) ValidateHolding(name, code, groupID string, quantity f
 	holding := &models.Holding{
 		Name:     name,
 		Code:     code,
-		GroupID:  groupID,
 		Quantity: quantity,
 	}
 
 	return holding, true, nil
+}
+
+// ValidateHolding valida si un holding existe en la URL de scraping con cache Redis
+// Este método requiere que el grupo ya exista para obtener el tipo de inversión
+func (s *ScrapingService) ValidateHolding(name, code, groupID string, quantity float64) (*models.Holding, bool, error) {
+	// Obtener el grupo y su tipo de inversión
+	var group models.Group
+	err := database.DB.Preload("Type").First(&group, "id = ?", groupID).Error
+	if err != nil {
+		return nil, false, fmt.Errorf("grupo no encontrado: %w", err)
+	}
+
+	// Usar el nuevo método que no depende de grupo existente
+	holding, isValid, err := s.ValidateHoldingWithType(name, code, &group.Type, group.Name, quantity)
+	if err != nil {
+		return nil, false, err
+	}
+
+	// Si es válido, agregar el GroupID al holding
+	if isValid && holding != nil {
+		holding.GroupID = groupID
+	}
+
+	return holding, isValid, nil
 }
 
 // ClearValidatedHoldingCache elimina el cache de un holding específico
@@ -226,12 +245,23 @@ func (s *ScrapingService) GetValidationCacheStats() map[string]interface{} {
 }
 
 // FetchAssetPrice obtiene el precio de un activo usando la estrategia apropiada
+// Este método requiere un grupo existente para obtener el tipo de inversión
 func (s *ScrapingService) FetchAssetPrice(typeInvestment *models.TypeInvestment, code, groupName string) (float64, error) {
+	return s.fetchAssetPriceWithType(typeInvestment, code, groupName)
+}
+
+// fetchAssetPriceWithType obtiene el precio usando directamente el tipo de inversión
+// Este método no depende de la existencia de un grupo
+func (s *ScrapingService) fetchAssetPriceWithType(typeInvestment *models.TypeInvestment, code, groupName string) (float64, error) {
+	log.Printf("🔍 fetchAssetPriceWithType llamado - TypeInvestment: %+v, Code: %s, GroupName: %s", typeInvestment, code, groupName)
+
 	// Obtener la estrategia apropiada según el nombre del grupo
 	strategy, err := s.factory.GetStrategy(groupName)
 	if err != nil {
 		return 0, fmt.Errorf("error obteniendo estrategia de scraping para grupo %s: %w", groupName, err)
 	}
+
+	log.Printf("🔍 Estrategia obtenida: %s", strategy.GetSupportedType())
 
 	// Usar la estrategia para obtener el precio
 	price, err := strategy.FetchPrice(typeInvestment, code)
