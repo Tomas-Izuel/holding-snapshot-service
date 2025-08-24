@@ -1,25 +1,70 @@
 package services
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
 	"holding-snapshots/internal/models"
 	"holding-snapshots/internal/scraping"
-	"holding-snapshots/pkg/cache"
 	"holding-snapshots/pkg/database"
 	"log"
-	"time"
 )
 
 type ScrapingService struct {
 	factory *scraping.ScrapingFactory
 }
 
+func FetchAssetPrice(typeInvestment *models.TypeInvestment, code string) (float64, error) {
+	log.Printf("FetchAssetPrice: %s", typeInvestment.Name)
+	strategy, err := scraping.GetStrategy(typeInvestment)
+	if err != nil {
+		log.Print("[FetchAssetPrice] Error getting strategy")
+		return 0, err
+	}
+	price, err := strategy.FetchPrice(typeInvestment, code)
+	if err != nil {
+		log.Print("[FetchAssetPrice] Error getting price")
+		return 0, err
+	}
+	return price, nil
+}
+
+func GetCurrentAssetStatus(holding *models.Holding) (float64, error) {
+	price, err := FetchAssetPrice(&holding.Group.Type, holding.Code)
+	if err != nil {
+		log.Print("[GetCurrentAssetStatus] Error getting price")
+		return 0, err
+	}
+
+	return price * holding.Quantity, nil
+}
+
+func GetTypeInvestmentByID(id string) (*models.TypeInvestment, error) {
+	var typeInvestment models.TypeInvestment
+	err := database.DB.First(&typeInvestment, "id = ?", id).Error
+	if err != nil {
+		log.Print("[GetTypeInvestmentByID] Error getting type investment")
+		return nil, err
+	}
+	return &typeInvestment, nil
+}
+
+func ValidateHolding(typeInvestmentId string, code string) (bool, error) {
+	typeInvestment, err := GetTypeInvestmentByID(typeInvestmentId)
+	if err != nil {
+		log.Print("[ValidateHolding] Error getting type investment")
+		return false, err
+	}
+	price, err := FetchAssetPrice(typeInvestment, code)
+	if err != nil {
+		log.Print("[ValidateHolding] Error getting price")
+		return false, err
+	}
+	return price > 0, nil
+}
+
+/*
 // NewScrapingService crea una nueva instancia del servicio de scraping
 func NewScrapingService() *ScrapingService {
 	return &ScrapingService{
-		factory: scraping.NewScrapingFactory(),
+		factory: scraping.GetStrategy(),
 	}
 }
 
@@ -274,3 +319,4 @@ func (s *ScrapingService) fetchAssetPriceWithType(typeInvestment *models.TypeInv
 
 	return price, nil
 }
+*/

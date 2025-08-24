@@ -17,27 +17,19 @@ type ValidationController struct {
 // NewValidationController crea una nueva instancia del controlador
 func NewValidationController() *ValidationController {
 	return &ValidationController{
-		scrapingService: services.NewScrapingService(),
+		scrapingService: &services.ScrapingService{},
 	}
 }
 
 // ValidateHoldingRequest representa la estructura de la request de validación
 type ValidateHoldingRequest struct {
-	Name             string  `json:"name" validate:"required"`
-	Code             string  `json:"code" validate:"required"`
-	GroupID          string  `json:"groupId,omitempty"`          // Opcional para validación sin grupo existente
-	TypeInvestmentID string  `json:"typeInvestmentId,omitempty"` // Requerido cuando no hay groupId
-	GroupName        string  `json:"groupName,omitempty"`        // Requerido cuando no hay groupId
-	Quantity         float64 `json:"quantity,omitempty"`         // Opcional
+	Code             string `json:"code" validate:"required"`
+	TypeInvestmentID string `json:"typeInvestmentId,omitempty"`
 }
 
 // ValidateHoldingResponse representa la estructura de la response de validación
 type ValidateHoldingResponse struct {
-	Holding struct {
-		Name string `json:"name"`
-		Code string `json:"code"`
-	} `json:"holding"`
-	IsValid bool `json:"is_valid"`
+	IsValid bool `json:"isValid"`
 }
 
 // ValidateHolding valida si un holding es válido para ser agregado
@@ -53,9 +45,9 @@ func (vc *ValidationController) ValidateHolding(c *fiber.Ctx) error {
 	}
 
 	// Validaciones básicas
-	if req.Name == "" || req.Code == "" {
+	if req.Code == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Los campos name y code son requeridos",
+			"error": "El campo code es requerido",
 		})
 	}
 
