@@ -12,7 +12,7 @@ type ScrapingStrategy interface {
 }
 
 const (
-	CedearsStrategyEnum = "cedears"
-	CryptoStrategyEnum  = "crypto"
-	StockStrategyEnum   = "stock"
+	CedearsStrategyEnum = "Cedears"
+	CryptoStrategyEnum  = "Criptomonedas"
+	StockStrategyEnum   = "Acciones"
 )

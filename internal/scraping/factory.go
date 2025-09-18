@@ -13,10 +13,13 @@ type ScrapingFactory struct {
 func GetStrategy(typeInvestment *models.TypeInvestment) (ScrapingStrategy, error) {
 	switch typeInvestment.Name {
 	case CedearsStrategyEnum:
+		fmt.Println("CedearsStrategyEnum")
 		return &StockStrategy{}, nil
 	case CryptoStrategyEnum:
+		fmt.Println("CryptoStrategyEnum")
 		return &StockStrategy{}, nil
 	case StockStrategyEnum:
+		fmt.Println("StockStrategyEnum")
 		return &StockStrategy{}, nil
 	default:
 		return nil, fmt.Errorf("no se encontró la estrategia para el tipo de inversión: %s", typeInvestment.Name)

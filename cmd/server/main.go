@@ -5,7 +5,6 @@ import (
 
 	"holding-snapshots/internal/config"
 	"holding-snapshots/internal/routes"
-	"holding-snapshots/internal/services"
 	"holding-snapshots/pkg/cache"
 	"holding-snapshots/pkg/database"
 
@@ -50,18 +49,19 @@ func main() {
 	routes.SetupRoutes(app)
 
 	// Configurar servicios de cron
-	cronService := services.NewCronService()
-	cronService.SetupCronJobs(app, cfg.ScrapingCronSchedule)
+	// TODO: Descomentar cuando se implemente el CronService
+	// cronService := services.NewCronService()
+	// cronService.SetupCronJobs(app, cfg.ScrapingCronSchedule)
 
 	// Mensaje de inicio
 	log.Printf("🚀 Servidor iniciando en puerto %s", cfg.Port)
 	log.Printf("🌍 Entorno: %s", cfg.Environment)
-	log.Printf("📅 Cron schedule: %s", cfg.ScrapingCronSchedule)
+	// log.Printf("📅 Cron schedule: %s", cfg.ScrapingCronSchedule)
 
 	// Configurar graceful shutdown
 	defer func() {
 		log.Println("🛑 Cerrando servicios...")
-		cronService.Stop()
+		// cronService.Stop()
 	}()
 
 	// Iniciar servidor

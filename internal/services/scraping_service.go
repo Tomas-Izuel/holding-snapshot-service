@@ -11,7 +11,13 @@ type ScrapingService struct {
 	factory *scraping.ScrapingFactory
 }
 
-func FetchAssetPrice(typeInvestment *models.TypeInvestment, code string) (float64, error) {
+func NewScrapingService() *ScrapingService {
+	return &ScrapingService{
+		factory: &scraping.ScrapingFactory{},
+	}
+}
+
+func (s *ScrapingService) FetchAssetPrice(typeInvestment *models.TypeInvestment, code string) (float64, error) {
 	log.Printf("FetchAssetPrice: %s", typeInvestment.Name)
 	strategy, err := scraping.GetStrategy(typeInvestment)
 	if err != nil {
@@ -26,8 +32,8 @@ func FetchAssetPrice(typeInvestment *models.TypeInvestment, code string) (float6
 	return price, nil
 }
 
-func GetCurrentAssetStatus(holding *models.Holding) (float64, error) {
-	price, err := FetchAssetPrice(&holding.Group.Type, holding.Code)
+func (s *ScrapingService) GetCurrentAssetStatus(holding *models.Holding) (float64, error) {
+	price, err := s.FetchAssetPrice(&holding.Group.Type, holding.Code)
 	if err != nil {
 		log.Print("[GetCurrentAssetStatus] Error getting price")
 		return 0, err
@@ -36,7 +42,7 @@ func GetCurrentAssetStatus(holding *models.Holding) (float64, error) {
 	return price * holding.Quantity, nil
 }
 
-func GetTypeInvestmentByID(id string) (*models.TypeInvestment, error) {
+func (s *ScrapingService) GetTypeInvestmentByID(id string) (*models.TypeInvestment, error) {
 	var typeInvestment models.TypeInvestment
 	err := database.DB.First(&typeInvestment, "id = ?", id).Error
 	if err != nil {
@@ -46,18 +52,19 @@ func GetTypeInvestmentByID(id string) (*models.TypeInvestment, error) {
 	return &typeInvestment, nil
 }
 
-func ValidateHolding(typeInvestmentId string, code string) (bool, error) {
-	typeInvestment, err := GetTypeInvestmentByID(typeInvestmentId)
+// ValidateHolding valida si un holding es válido obteniendo su precio
+func (s *ScrapingService) ValidateHolding(typeInvestmentId string, code string) (float64, error) {
+	typeInvestment, err := s.GetTypeInvestmentByID(typeInvestmentId)
 	if err != nil {
 		log.Print("[ValidateHolding] Error getting type investment")
-		return false, err
+		return 0, err
 	}
-	price, err := FetchAssetPrice(typeInvestment, code)
+	price, err := s.FetchAssetPrice(typeInvestment, code)
 	if err != nil {
 		log.Print("[ValidateHolding] Error getting price")
-		return false, err
+		return 0, err
 	}
-	return price > 0, nil
+	return price, nil
 }
 
 /*
