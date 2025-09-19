@@ -102,13 +102,62 @@ func (cs *CronService) ExecuteWeeklyScraping() {
 func (cs *CronService) getAllValidAssets() ([]models.Asset, error) {
 	var assets []models.Asset
 
-	// Usar el nombre del campo del struct para evitar problemas de naming
-	err := database.DB.Preload("Type").Where(&models.Asset{IsValid: true}).Find(&assets).Error
+	log.Println("🔍 Cargando assets con tipos de inversión...")
+
+	// Método 1: Usar Joins para hacer un LEFT JOIN
+	err := database.DB.
+		Joins("Type").
+		Where("\"Asset\".\"is_valid\" = ?", true).
+		Find(&assets).Error
+
 	if err != nil {
-		return nil, fmt.Errorf("error obteniendo assets válidos: %w", err)
+		log.Printf("⚠️ Error con Joins, intentando Preload: %v", err)
+		// Fallback: Usar Preload
+		err = database.DB.
+			Preload("Type").
+			Where("is_valid = ?", true).
+			Find(&assets).Error
+
+		if err != nil {
+			return nil, fmt.Errorf("error obteniendo assets válidos: %w", err)
+		}
+	}
+
+	// Debug: verificar que los tipos se cargaron correctamente
+	log.Printf("📊 Encontrados %d assets válidos", len(assets))
+	for i, asset := range assets {
+		log.Printf("🔍 Asset %d: %s (%s) - TypeID: '%s', Type.ID: '%s', Type.Name: '%s'",
+			i+1, asset.Name, asset.Code, asset.TypeID, asset.Type.ID, asset.Type.Name)
+	}
+
+	// Si los tipos no se cargaron, intentar manualmente
+	if len(assets) > 0 && assets[0].Type.ID == "" && assets[0].TypeID != "" {
+		log.Println("⚠️ Relaciones no cargadas, intentando carga manual...")
+		err = cs.loadTypesManually(assets)
+		if err != nil {
+			log.Printf("❌ Error cargando tipos manualmente: %v", err)
+		}
 	}
 
 	return assets, nil
+}
+
+// loadTypesManually carga los tipos de inversión manualmente para los assets
+func (cs *CronService) loadTypesManually(assets []models.Asset) error {
+	for i := range assets {
+		if assets[i].TypeID != "" {
+			var typeInvestment models.TypeInvestment
+			err := database.DB.First(&typeInvestment, "id = ?", assets[i].TypeID).Error
+			if err != nil {
+				log.Printf("⚠️ No se pudo cargar tipo para asset %s (TypeID: %s): %v",
+					assets[i].Name, assets[i].TypeID, err)
+				continue
+			}
+			assets[i].Type = typeInvestment
+			log.Printf("✅ Tipo cargado manualmente para %s: %s", assets[i].Name, typeInvestment.Name)
+		}
+	}
+	return nil
 }
 
 // processAsset procesa un asset individual: scrapea precio y crea snapshots
@@ -138,16 +187,24 @@ func (cs *CronService) processAsset(asset *models.Asset) error {
 
 // scrapeAssetPrice scrapea el precio actual de un asset usando la estrategia correcta
 func (cs *CronService) scrapeAssetPrice(asset *models.Asset) (float64, error) {
+	// Verificar que el tipo de inversión esté cargado
+	if asset.Type.ID == "" {
+		return 0, fmt.Errorf("tipo de inversión no cargado para asset %s (TypeID: %s)", asset.Name, asset.TypeID)
+	}
+
+	log.Printf("🔍 Usando tipo de inversión: %s (ID: %s) para asset %s",
+		asset.Type.Name, asset.Type.ID, asset.Name)
+
 	// Obtener la estrategia correcta según el tipo de inversión
 	strategy, err := scraping.GetStrategy(&asset.Type)
 	if err != nil {
-		return 0, fmt.Errorf("error obteniendo estrategia para tipo %s: %w", asset.Type.Name, err)
+		return 0, fmt.Errorf("error obteniendo estrategia para tipo '%s': %w", asset.Type.Name, err)
 	}
 
 	// Scrapear el precio
 	price, err := strategy.FetchPrice(&asset.Type, asset.Code)
 	if err != nil {
-		return 0, fmt.Errorf("error fetching price con estrategia %s: %w", asset.Type.Name, err)
+		return 0, fmt.Errorf("error fetching price con estrategia '%s': %w", asset.Type.Name, err)
 	}
 
 	log.Printf("💰 Precio scrapeado para %s (%s): %.2f %s",
@@ -172,7 +229,7 @@ func (cs *CronService) updateAssetLastPrice(asset *models.Asset, price float64) 
 func (cs *CronService) createSnapshotsForAsset(asset *models.Asset, currentPrice float64) error {
 	// Obtener todos los holdings de este asset
 	var holdings []models.Holding
-	err := database.DB.Where("asset_id = ?", asset.ID).Find(&holdings).Error
+	err := database.DB.Where("\"assetId\" = ?", asset.ID).Find(&holdings).Error
 	if err != nil {
 		return fmt.Errorf("error obteniendo holdings para asset %s: %w", asset.ID, err)
 	}
@@ -214,8 +271,8 @@ func (cs *CronService) createSnapshotsForAsset(asset *models.Asset, currentPrice
 func (cs *CronService) updateHoldingEarnings(holding *models.Holding, currentPrice float64) error {
 	// Obtener el snapshot más reciente anterior a este para calcular earnings
 	var previousSnapshot models.Snapshot
-	err := database.DB.Where("holding_id = ?", holding.ID).
-		Order("created_at DESC").
+	err := database.DB.Where("\"holdingId\" = ?", holding.ID).
+		Order("\"createdAt\" DESC").
 		Offset(1). // Saltar el snapshot que acabamos de crear
 		First(&previousSnapshot).Error
 

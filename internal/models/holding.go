@@ -8,12 +8,12 @@ import (
 // Holding representa una tenencia específica de un activo en un grupo
 type Holding struct {
 	ID               string     `json:"id" gorm:"type:uuid;primary_key"`
-	GroupID          string     `json:"groupId" gorm:"type:uuid;not null"`
+	GroupID          string     `json:"groupId" gorm:"type:uuid;not null;column:groupId"`
 	Group            Group      `json:"group" gorm:"foreignKey:GroupID"`
 	Quantity         float64    `json:"quantity" gorm:"not null"`
 	Earnings         float64    `json:"earnings" gorm:"not null;default:0"`
 	RelativeEarnings float64    `json:"relativeEarnings" gorm:"not null;default:0"`
-	AssetID          string     `json:"assetId" gorm:"type:uuid;not null"`
+	AssetID          string     `json:"assetId" gorm:"type:uuid;not null;column:assetId"`
 	Asset            Asset      `json:"asset" gorm:"foreignKey:AssetID"`
 	Snapshots        []Snapshot `json:"snapshots" gorm:"foreignKey:HoldingID"`
 }

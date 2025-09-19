@@ -12,11 +12,11 @@ type Asset struct {
 	ID        string         `json:"id" gorm:"type:uuid;primary_key"`
 	Name      string         `json:"name" gorm:"not null"`
 	Code      string         `json:"code" gorm:"not null;uniqueIndex"`
-	LastPrice float64        `json:"lastPrice" gorm:"not null"`
-	IsValid   bool           `json:"isValid" gorm:"default:true"`
-	CreatedAt time.Time      `json:"createdAt"`
-	TypeID    string         `json:"typeId" gorm:"type:uuid;not null"`
-	Type      TypeInvestment `json:"type" gorm:"foreignKey:TypeID"`
+	LastPrice float64        `json:"lastPrice" gorm:"not null;column:lastPrice"`
+	CreatedAt time.Time      `json:"createdAt" gorm:"column:createdAt"`
+	TypeID    string         `json:"typeId" gorm:"type:uuid;not null;column:typeId"`
+	IsValid   bool           `json:"isValid" gorm:"default:true;column:is_valid"`
+	Type      TypeInvestment `json:"type" gorm:"foreignKey:TypeID;references:ID"`
 	Holdings  []Holding      `json:"holdings" gorm:"foreignKey:AssetID"`
 }
 
