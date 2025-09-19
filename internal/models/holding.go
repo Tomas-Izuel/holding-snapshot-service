@@ -5,17 +5,16 @@ import (
 	"gorm.io/gorm"
 )
 
-// Holding representa un activo de inversión específico
+// Holding representa una tenencia específica de un activo en un grupo
 type Holding struct {
 	ID               string     `json:"id" gorm:"type:uuid;primary_key"`
-	Name             string     `json:"name" gorm:"not null"` // Ej: "Apple", "BTC"
-	Code             string     `json:"code" gorm:"not null"` // Ej: "AAPL", "BTC"
-	GroupID          string     `json:"group_id" gorm:"type:uuid;not null"`
+	GroupID          string     `json:"groupId" gorm:"type:uuid;not null"`
 	Group            Group      `json:"group" gorm:"foreignKey:GroupID"`
 	Quantity         float64    `json:"quantity" gorm:"not null"`
-	LastPrice        *float64   `json:"last_price,omitempty"`        // Puede ser null
-	Earnings         *float64   `json:"earnings,omitempty"`          // Puede ser null
-	RelativeEarnings *float64   `json:"relative_earnings,omitempty"` // Porcentaje de ganancia/pérdida
+	Earnings         float64    `json:"earnings" gorm:"not null;default:0"`
+	RelativeEarnings float64    `json:"relativeEarnings" gorm:"not null;default:0"`
+	AssetID          string     `json:"assetId" gorm:"type:uuid;not null"`
+	Asset            Asset      `json:"asset" gorm:"foreignKey:AssetID"`
 	Snapshots        []Snapshot `json:"snapshots" gorm:"foreignKey:HoldingID"`
 }
 
@@ -32,14 +31,13 @@ func (Holding) TableName() string {
 	return "Holding"
 }
 
-// CalculateEarnings calcula las ganancias basado en precio actual vs snapshots anteriores
-func (h *Holding) CalculateEarnings(currentPrice float64) {
-	if h.LastPrice != nil && *h.LastPrice > 0 {
-		earnings := (currentPrice - *h.LastPrice) * h.Quantity
-		h.Earnings = &earnings
+// CalculateEarnings calcula las ganancias basado en precio actual del activo vs snapshots anteriores
+func (h *Holding) CalculateEarnings(currentPrice, previousPrice float64) {
+	if previousPrice > 0 {
+		earnings := (currentPrice - previousPrice) * h.Quantity
+		h.Earnings = earnings
 
-		relativeEarnings := ((currentPrice - *h.LastPrice) / *h.LastPrice) * 100
-		h.RelativeEarnings = &relativeEarnings
+		relativeEarnings := ((currentPrice - previousPrice) / previousPrice) * 100
+		h.RelativeEarnings = relativeEarnings
 	}
-	h.LastPrice = &currentPrice
 }

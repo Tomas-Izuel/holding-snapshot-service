@@ -11,13 +11,13 @@ import (
 type Group struct {
 	ID        string         `json:"id" gorm:"type:uuid;primary_key"`
 	Name      string         `json:"name" gorm:"not null"`
-	UserID    string         `json:"user_id" gorm:"type:uuid;not null"`
+	UserID    string         `json:"userId" gorm:"type:uuid;not null"`
 	User      User           `json:"user" gorm:"foreignKey:UserID"`
-	TypeID    string         `json:"type_id" gorm:"type:uuid;not null"`
+	TypeID    string         `json:"typeId" gorm:"type:uuid;not null"`
 	Type      TypeInvestment `json:"type" gorm:"foreignKey:TypeID"`
 	Holdings  []Holding      `json:"holdings" gorm:"foreignKey:GroupID"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
+	CreatedAt time.Time      `json:"createdAt"`
+	UpdatedAt time.Time      `json:"updatedAt"`
 }
 
 // BeforeCreate hook de GORM para generar UUID antes de crear

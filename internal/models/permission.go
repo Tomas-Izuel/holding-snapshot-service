@@ -10,8 +10,8 @@ type Permission struct {
 	ID          string   `json:"id" gorm:"type:uuid;primary_key"`
 	Name        string   `json:"name" gorm:"uniqueIndex;not null"`
 	Description string   `json:"description" gorm:"not null"`
-	TypeUserID  string   `json:"type_user_id" gorm:"type:uuid;not null"`
-	TypeUser    TypeUser `json:"type_user" gorm:"foreignKey:TypeUserID"`
+	TypeUserID  string   `json:"typeUserId" gorm:"type:uuid;not null"`
+	TypeUser    TypeUser `json:"typeUser" gorm:"foreignKey:TypeUserID"`
 }
 
 // BeforeCreate hook de GORM para generar UUID antes de crear

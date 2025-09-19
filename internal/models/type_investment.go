@@ -12,6 +12,7 @@ type TypeInvestment struct {
 	ScrapingURL string  `json:"scrappingUrl" gorm:"column:scrappingUrl;not null"`
 	Currency    string  `json:"currency" gorm:"not null"` // Ej: "USD", "ARS"
 	Groups      []Group `json:"groups" gorm:"foreignKey:TypeID"`
+	Assets      []Asset `json:"assets" gorm:"foreignKey:TypeID"`
 }
 
 // BeforeCreate hook de GORM para generar UUID antes de crear

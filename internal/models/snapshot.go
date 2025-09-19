@@ -11,10 +11,10 @@ import (
 type Snapshot struct {
 	ID        string    `json:"id" gorm:"type:uuid;primary_key"`
 	Price     float64   `json:"price" gorm:"not null"` // Precio del holding en el momento del snapshot
-	HoldingID string    `json:"holding_id" gorm:"type:uuid;not null"`
+	HoldingID string    `json:"holdingId" gorm:"type:uuid;not null"`
 	Holding   Holding   `json:"holding" gorm:"foreignKey:HoldingID"`
 	Quantity  float64   `json:"quantity" gorm:"not null"` // Cantidad de holdings al momento del snapshot
-	CreatedAt time.Time `json:"created_at"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 // BeforeCreate hook de GORM para generar UUID antes de crear

@@ -2,9 +2,13 @@ package main
 
 import (
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"holding-snapshots/internal/config"
 	"holding-snapshots/internal/routes"
+	"holding-snapshots/internal/services"
 	"holding-snapshots/pkg/cache"
 	"holding-snapshots/pkg/database"
 
@@ -45,23 +49,30 @@ func main() {
 	}))
 	app.Use(recover.New())
 
-	// Configurar rutas
-	routes.SetupRoutes(app)
-
 	// Configurar servicios de cron
-	// TODO: Descomentar cuando se implemente el CronService
-	// cronService := services.NewCronService()
-	// cronService.SetupCronJobs(app, cfg.ScrapingCronSchedule)
+	cronService := services.NewCronService()
+	if err := cronService.Start(); err != nil {
+		log.Fatalf("❌ Error iniciando servicio de cron: %v", err)
+	}
+
+	// Configurar rutas
+	routes.SetupRoutes(app, cronService)
 
 	// Mensaje de inicio
 	log.Printf("🚀 Servidor iniciando en puerto %s", cfg.Port)
 	log.Printf("🌍 Entorno: %s", cfg.Environment)
-	// log.Printf("📅 Cron schedule: %s", cfg.ScrapingCronSchedule)
+	log.Printf("📅 Próxima ejecución de cron: %s", cronService.GetNextScheduledRun().Format("2006-01-02 15:04:05 UTC"))
 
 	// Configurar graceful shutdown
-	defer func() {
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		<-c
 		log.Println("🛑 Cerrando servicios...")
-		// cronService.Stop()
+		cronService.Stop()
+		log.Println("✅ Servicios cerrados correctamente")
+		os.Exit(0)
 	}()
 
 	// Iniciar servidor

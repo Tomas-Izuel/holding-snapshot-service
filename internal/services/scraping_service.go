@@ -33,7 +33,7 @@ func (s *ScrapingService) FetchAssetPrice(typeInvestment *models.TypeInvestment,
 }
 
 func (s *ScrapingService) GetCurrentAssetStatus(holding *models.Holding) (float64, error) {
-	price, err := s.FetchAssetPrice(&holding.Group.Type, holding.Code)
+	price, err := s.FetchAssetPrice(&holding.Group.Type, holding.Asset.Code)
 	if err != nil {
 		log.Print("[GetCurrentAssetStatus] Error getting price")
 		return 0, err
